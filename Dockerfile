@@ -22,5 +22,4 @@ COPY docker-entrypoint.sh /usr/local/bin/matchday-entrypoint
 RUN sed -i 's/\r$//' /usr/local/bin/matchday-entrypoint && chmod +x /usr/local/bin/matchday-entrypoint
 ENTRYPOINT ["matchday-entrypoint"]
 EXPOSE 3000
-VOLUME ["/app/data"]
 CMD ["node","server/index.js","--production"]
