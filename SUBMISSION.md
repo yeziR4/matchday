@@ -10,11 +10,15 @@
 
 **Trust model:** Scoring and fixture ingestion are operated by Matchday. Receipts prove a digest was recorded at a time, not that a result is independently verified. Data can be delayed on the free API tier. The app has no cash stakes or cash prizes. Each wallet is an account; the product does not claim personhood verification.
 
-**Website:** Pending public deployment.
+**Website:** https://matchday-production-1b9f.up.railway.app/
 
-**Source repository:** Pending repository destination.
+**Source repository:** https://github.com/yeziR4/matchday
 
-**BOT mainnet contract:** Pending deployment. Do not submit an unverified or invented address.
+**BOT mainnet contract:** 0x5dc66B8F74E581a6b4f5Bbcf79aAFae995546C8a (chain ID 677).
+
+**Deployment transaction:** https://scan.botchain.ai/tx/0xc1fa8a2d794536c0e5f95378c1d682bf83706b1bf022291430681907f65d95eb
+
+Creation and deployed runtime bytecode were independently matched to the local compiled PredictionBook contract. Explorer source-code publication and a user receipt transaction remain separate checks.
 
 **Team / contact / reward address:** To be supplied by the owner.
 

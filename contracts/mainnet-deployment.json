@@ -1,0 +1,10 @@
+{
+  "chainId": 677,
+  "address": "0x5dc66B8F74E581a6b4f5Bbcf79aAFae995546C8a",
+  "transactionHash": "0xc1fa8a2d794536c0e5f95378c1d682bf83706b1bf022291430681907f65d95eb",
+  "deployer": "0x4ad285A88CD15Bf1AdE6AA0e66E6Fa468A8D8F40",
+  "blockNumber": 24283435,
+  "gasUsed": "181213",
+  "feeBOT": "0.00362426",
+  "verification": "Creation and runtime bytecode matched local solc compilation via mainnet RPC"
+}

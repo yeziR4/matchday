@@ -24,7 +24,9 @@ const { app, feed } = createApp(db, {
   token: process.env.FOOTBALL_DATA_TOKEN,
   crests: process.env.SHOW_TEAM_CRESTS === "true",
   voteUrl,
-  contract: process.env.PREDICTION_CONTRACT_ADDRESS || null,
+  contract: mode === "live"
+    ? process.env.PREDICTION_CONTRACT_ADDRESS || "0x5dc66B8F74E581a6b4f5Bbcf79aAFae995546C8a"
+    : null,
 });
 if (production) {
   if (!existsSync("dist/index.html"))
