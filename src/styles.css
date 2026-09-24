@@ -2466,3 +2466,8 @@ button:hover:not(:disabled) {
 .load-more:empty {
   display: none;
 }
+
+/* Keep ecosystem links readable and visible on every screen size. */
+.page-footer { flex-wrap: wrap; font-size: 12px; color: #9aafa1; }
+.page-footer a, .page-footer button { font-size: 12px; color: #a9c4b3; }
+.page-footer a:hover { color: var(--mint, #15dcac); }

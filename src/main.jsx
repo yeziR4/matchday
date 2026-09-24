@@ -1592,6 +1592,8 @@ function App() {
           <footer className="page-footer">
             <span>© {new Date().getFullYear()} Matchday</span>
             <span>Made for the love of the game.</span>
+            <a href="https://botchain.ai" target="_blank" rel="noreferrer">Built for BOT Chain ↗</a>
+            <a href="https://scan.botchain.ai" target="_blank" rel="noreferrer">BOT Chain Explorer ↗</a>
             <button onClick={() => setModal("rules")}>
               Rules & transparency <ArrowUpRight size={12} />
             </button>

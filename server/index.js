@@ -4,9 +4,10 @@ import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { openDatabase } from "./db.js";
 import { createApp } from "./app.js";
+import { resolveOrigin } from "./origin.js";
 const production = process.argv.includes("--production");
 const port = Number(process.env.PORT || 3000);
-const origin = process.env.APP_ORIGIN || `http://localhost:${port}`;
+const origin = resolveOrigin(process.env, port);
 const mode = process.env.DATA_MODE || "demo";
 if (!["demo", "live"].includes(mode))
   throw new Error("DATA_MODE must be demo or live");
