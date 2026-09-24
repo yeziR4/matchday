@@ -261,3 +261,19 @@ test("next-month predictions cannot inflate this week’s leaderboard", async ()
   );
   db.close();
 });
+
+test("deployed domain signs in despite stale configured domain; foreign origins stay blocked", async () => {
+  const db = openDatabase(":memory:");
+  const {app} = createApp(db,{origin:"https://wrong.example",mode:"live",production:true,crests:false});
+  const publicOrigin="https://matchday-production-1b9f.up.railway.app";
+  const wallet=Wallet.createRandom();
+  const c=await request(app).post("/api/auth/challenge").set("Origin",publicOrigin).send({address:wallet.address});
+  assert.equal(c.status,200);
+  assert.ok(c.body.message.startsWith("matchday-production-1b9f.up.railway.app wants"));
+  assert.ok(c.body.message.includes(`URI: ${publicOrigin}\n`));
+  const r=await request(app).post("/api/auth/verify").set("Origin",publicOrigin).send({id:c.body.id,signature:await wallet.signMessage(c.body.message)});
+  assert.equal(r.status,200);assert.match(r.headers["set-cookie"][0],/Secure/);
+  assert.equal((await request(app).post("/api/auth/challenge").set("Origin","https://attacker.example").send({address:wallet.address})).status,403);
+  assert.equal((await request(app).post("/api/auth/challenge").send({address:wallet.address})).status,403);
+  db.close();
+});

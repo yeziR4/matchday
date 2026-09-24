@@ -23,6 +23,9 @@ const fail = (message, status = 400) =>
   Object.assign(new Error(message), { status });
 export function createApp(db, config) {
   const app = express();
+  const allowedOrigins = new Set([new URL(config.origin).origin]);
+  if (config.production && config.mode === "live")
+    allowedOrigins.add("https://matchday-production-1b9f.up.railway.app");
   const proxyHops = config.trustProxyHops ?? 0;
   if (!Number.isInteger(proxyHops) || proxyHops < 0 || proxyHops > 5)
     throw new Error("TRUST_PROXY_HOPS must be an integer from 0 to 5");
@@ -63,11 +66,12 @@ export function createApp(db, config) {
     res.set("Cache-Control", "no-store");
     if (
       !["GET", "HEAD", "OPTIONS"].includes(req.method) &&
-      req.get("origin") !== config.origin
+      !allowedOrigins.has(req.get("origin"))
     )
       return res
         .status(403)
         .json({ error: "Request origin does not match this app." });
+    req.appOrigin = allowedOrigins.has(req.get("origin")) ? req.get("origin") : config.origin;
     const token = req.cookies.matchday_session;
     if (token) {
       const s = db
@@ -97,7 +101,7 @@ export function createApp(db, config) {
     res.cookie("matchday_session", token, {
       httpOnly: true,
       sameSite: "strict",
-      secure: config.origin.startsWith("https:"),
+      secure: config.production || config.origin.startsWith("https:"),
       maxAge: 7 * 86400000,
       path: "/",
     });
@@ -160,7 +164,7 @@ export function createApp(db, config) {
       const address = getAddress(req.body.address);
       const id = randomBytes(16).toString("hex");
       const now = Date.now();
-      const message = `${new URL(config.origin).host} wants you to sign in with your Ethereum account:\n${address}\n\nSign in to Matchday. This signature is free and does not submit a vote or authorize a payment.\n\nURI: ${config.origin}\nVersion: 1\nChain ID: 677\nNonce: ${id}\nIssued At: ${new Date(now).toISOString()}\nExpiration Time: ${new Date(now + 300000).toISOString()}`;
+      const message = `${new URL(req.appOrigin).host} wants you to sign in with your Ethereum account:\n${address}\n\nSign in to Matchday. This signature is free and does not submit a vote or authorize a payment.\n\nURI: ${req.appOrigin}\nVersion: 1\nChain ID: 677\nNonce: ${id}\nIssued At: ${new Date(now).toISOString()}\nExpiration Time: ${new Date(now + 300000).toISOString()}`;
       db.prepare("DELETE FROM challenges WHERE expires<?").run(now);
       db.prepare("DELETE FROM sessions WHERE expires<?").run(now);
       db.prepare("INSERT INTO challenges VALUES (?,?,?,?)").run(
