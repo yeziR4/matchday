@@ -1,3 +1,4 @@
+import { ensureChain, walletError } from "./wallet.js";
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserProvider, Contract } from "ethers";
@@ -517,31 +518,8 @@ function App() {
       const injected = providerRef.current || window.ethereum;
       if (!injected)
         throw new Error("Connect your wallet to anchor this receipt.");
-      try {
-        await injected.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: config.chain.hex }],
-        });
-      } catch (e) {
-        if (e.code !== 4902) throw e;
-        await injected.request({
-          method: "wallet_addEthereumChain",
-          params: [
-            {
-              chainId: config.chain.hex,
-              chainName: config.chain.name,
-              nativeCurrency: { name: "BOT", symbol: "BOT", decimals: 18 },
-              rpcUrls: [config.chain.rpc],
-              blockExplorerUrls: [config.chain.explorer],
-            },
-          ],
-        });
-        await injected.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: config.chain.hex }],
-        });
-      }
-      const eth = new BrowserProvider(injected);
+      await ensureChain(injected, config.chain);
+      const eth = new BrowserProvider(injected, "any");
       const signer = await eth.getSigner();
       if ((await signer.getAddress()).toLowerCase() !== user.address)
         throw new Error("Use the wallet you signed in with.");
@@ -553,12 +531,18 @@ function App() {
         ],
         signer,
       );
+      if (receipt.deadline <= Date.now() / 1000)
+        throw new Error("This receipt has passed its kickoff deadline. Submit a prediction for an upcoming match.");
+      if (await contract.commitments(user.address, receipt.hash) !== 0n) {
+        notify("This receipt is already recorded on BOT Chain.");
+        return;
+      }
       const tx = await contract.commit(receipt.hash, receipt.deadline);
       notify("Receipt submitted. Waiting for BOT Chain confirmation…");
       await tx.wait();
       notify("Receipt confirmed on BOT Chain.");
     } catch (e) {
-      notify(e.shortMessage || e.message, true);
+      notify(walletError(e), true);
     } finally {
       setBusy("");
     }
