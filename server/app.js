@@ -11,10 +11,12 @@ import {
   toUtf8Bytes,
 } from "ethers";
 import { createFeed } from "./feed.js";
+import { readCommitment } from "./confirmation.js";
 import {
   isOpen,
   validSelection,
   winningSelection,
+  settlement,
   shortAddress,
 } from "../shared/game.js";
 
@@ -309,7 +311,7 @@ export function createApp(db, config) {
     }
     db.exec("BEGIN IMMEDIATE");
     try {
-      for (const p of checked) {
+      for (const p of config.mode === "live" ? [] : checked) {
         db.prepare(
           `INSERT INTO predictions(id,address,fixture_id,market,selection,outcome,mode,created_at,updated_at) VALUES (?,?,?,?,?,'pending',?,?,?) ON CONFLICT(address,fixture_id,market) DO UPDATE SET selection=excluded.selection,updated_at=excluded.updated_at`,
         ).run(
@@ -360,6 +362,10 @@ export function createApp(db, config) {
         deadline,
         now,
       );
+      if (config.mode === "live") {
+        if (!config.contract) throw fail("BOT submissions are temporarily unavailable.", 503);
+        db.prepare("INSERT INTO submissions(receipt_id,contract,status) VALUES (?,?,'pending')").run(receipt.id, config.contract);
+      }
       db.exec("COMMIT");
       res.json({ predictions: predictions(req.user.address), receipt });
     } catch (error) {
@@ -367,11 +373,36 @@ export function createApp(db, config) {
       throw error;
     }
   });
+  app.post("/api/receipts/:id/confirm", requireUser, async (req, res) => {
+    const r = db.prepare("SELECT r.*,s.contract,s.status FROM receipts r JOIN submissions s ON s.receipt_id=r.id WHERE r.id=? AND r.address=?").get(req.params.id, req.user.address);
+    if (!r || config.mode !== "live") throw fail("Submission not found.", 404);
+    if (r.status === "confirmed") return res.json({ predictions: predictions(req.user.address) });
+    let recordedAt;
+    try { recordedAt = await (config.readCommitment || readCommitment)(r.contract, r.address, r.hash); }
+    catch { throw fail("Cannot verify BOT confirmation yet. Retry confirmation; do not pay again.", 503); }
+    if (!recordedAt || recordedAt >= r.deadline || recordedAt * 1000 < r.created_at - 1000)
+      throw fail("No valid pre-kickoff BOT confirmation found yet. Retry after your transaction confirms.", 409);
+    const payload = JSON.parse(r.payload);
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const p of payload.picks) {
+        const f = db.prepare("SELECT payload FROM fixtures WHERE id=? AND mode='live'").get(p.fixtureId);
+        if (!f || recordedAt * 1000 >= Date.parse(JSON.parse(f.payload).kickoff)) throw fail("The transaction missed the fixture cutoff.");
+        const old = db.prepare("SELECT * FROM predictions WHERE address=? AND fixture_id=? AND market=?").get(r.address,p.fixtureId,p.market);
+        if (old && old.updated_at >= r.created_at) continue;
+        const outcome = settlement(JSON.parse(f.payload),p.market,p.selection);
+        db.prepare("INSERT INTO predictions(id,address,fixture_id,market,selection,outcome,mode,created_at,updated_at) VALUES (?,?,?,?,?,?,'live',?,?) ON CONFLICT(address,fixture_id,market) DO UPDATE SET selection=excluded.selection,outcome=excluded.outcome,updated_at=excluded.updated_at").run(old?.id || randomUUID(),r.address,p.fixtureId,p.market,p.selection,outcome,old?.created_at || r.created_at,r.created_at);
+      }
+      db.prepare("UPDATE submissions SET status='confirmed' WHERE receipt_id=?").run(r.id);
+      db.exec("COMMIT");
+    } catch(e) { db.exec("ROLLBACK"); throw e; }
+    res.json({ predictions: predictions(req.user.address) });
+  });
   app.get("/api/receipts", requireUser, (req, res) =>
     res.json({
       receipts: db
         .prepare(
-          "SELECT id,hash,payload,deadline,created_at AS createdAt FROM receipts WHERE address=? ORDER BY created_at DESC LIMIT 100",
+          "SELECT r.id,r.hash,r.payload,r.deadline,r.created_at AS createdAt,s.status FROM receipts r LEFT JOIN submissions s ON s.receipt_id=r.id WHERE r.address=? ORDER BY r.created_at DESC LIMIT 100",
         )
         .all(req.user.address),
     }),

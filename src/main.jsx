@@ -480,8 +480,9 @@ function App() {
       for (let i = 0; i < slip.length; i += 100) {
         const batch = slip.slice(i, i + 100);
         const d = await api("/predictions", { picks: batch });
-        setPicks(d.predictions);
-        setReceipts((r) => [d.receipt, ...r]);
+        setReceipts((r) => [{...d.receipt, status: config.mode === "live" ? "pending" : null}, ...r]);
+        if (config.mode === "live") await commitReceipt({...d.receipt, status: "pending"});
+        else setPicks(d.predictions);
         setSlip((prev) =>
           prev.filter(
             (p) =>
@@ -500,7 +501,7 @@ function App() {
       setModal("success");
     } catch (e) {
       notify(
-        `${saved ? `${saved} picks saved; remaining picks are still in your slip. ` : ""}${e.message}`,
+        `${saved ? `${saved} picks saved; remaining picks are still in your slip. ` : ""}${walletError(e)}`,
         true,
       );
       await loadFixtures().catch(() => {});
@@ -508,9 +509,7 @@ function App() {
       setBusy("");
     }
   }
-  async function anchor(receipt) {
-    setBusy("anchor");
-    try {
+  async function commitReceipt(receipt) {
       if (!config.contract)
         throw new Error(
           "On-chain receipts will be available after the Matchday contract is deployed.",
@@ -531,16 +530,26 @@ function App() {
         ],
         signer,
       );
-      if (receipt.deadline <= Date.now() / 1000)
+      const recorded = await contract.commitments(user.address, receipt.hash);
+      if (recorded === 0n && receipt.deadline <= Date.now() / 1000)
         throw new Error("This receipt has passed its kickoff deadline. Submit a prediction for an upcoming match.");
-      if (await contract.commitments(user.address, receipt.hash) !== 0n) {
-        notify("This receipt is already recorded on BOT Chain.");
-        return;
-      }
+      if (recorded === 0n) {
       const tx = await contract.commit(receipt.hash, receipt.deadline);
+      localStorage.setItem(`matchday-tx-${receipt.id}`, tx.hash);
       notify("Receipt submitted. Waiting for BOT Chain confirmation…");
       await tx.wait();
-      notify("Receipt confirmed on BOT Chain.");
+      }
+      if (config.mode === "live" && receipt.status) {
+        const result = await api(`/receipts/${receipt.id}/confirm`, {});
+        setPicks(result.predictions);
+        await loadPersonal();
+      }
+      notify("Predictions confirmed on BOT Chain.");
+  }
+  async function anchor(receipt) {
+    setBusy("anchor");
+    try {
+      await commitReceipt(receipt);
     } catch (e) {
       notify(walletError(e), true);
     } finally {
@@ -717,11 +726,10 @@ function App() {
               ) : (
                 <Wallet size={17} />
               )}{" "}
-              {user ? "Submit predictions" : "Connect to submit"}
+              {user ? (config.mode === "live" ? "Submit picks on BOT" : "Submit practice picks") : "Connect to submit"}
             </button>
             <p>
-              <ShieldCheck size={12} /> Free to play. No deposit. No cash
-              prizes.
+              <ShieldCheck size={12} /> BOT network gas required for live picks. No stake or cash prizes.
             </p>
           </div>
         )}
@@ -850,6 +858,14 @@ function App() {
         </div>
       </aside>
       <main className="main">
+        {receipts.some(r => r.status === "pending") && <section className="notice-card">
+          <strong>Finish your BOT submission</strong>
+          <p>These picks only count after confirmation. If you already sent the transaction, retry to verify it without paying again.</p>
+          {receipts.filter(r => r.status === "pending").slice(0, 5).map(r => <div key={r.id}>
+            <button className="secondary small" disabled={!!busy} onClick={() => anchor(r)}>Confirm picks · {time(r.createdAt)}</button>
+            {localStorage.getItem(`matchday-tx-${r.id}`) && <a target="_blank" rel="noreferrer" href={`${config.chain.explorer}/tx/${localStorage.getItem(`matchday-tx-${r.id}`)}`}>View transaction ↗</a>}
+          </div>)}
+        </section>}
         <div className="content-wrap">
           {feed?.mode === "demo" && (
             <div className="demo-banner">
@@ -1472,10 +1488,7 @@ function App() {
                             <ShieldCheck size={17} /> Prediction receipts
                           </h3>
                           <p>
-                            A downloadable fingerprint of each submitted slip.
-                            {config?.contract
-                              ? " You can timestamp it on BOT Chain before kickoff."
-                              : " On-chain anchoring is not enabled yet."}
+                            New live picks require BOT confirmation. Earlier picks are retained as legacy history.
                           </p>
                           {receipts.slice(0, 5).map((r) => (
                             <div className="receipt-row" key={r.id}>
@@ -1484,8 +1497,9 @@ function App() {
                                   {r.hash.slice(0, 12)}…{r.hash.slice(-6)}
                                 </code>
                                 <small>
-                                  {day(r.createdAt)} · {time(r.createdAt)}
+                                  {day(r.createdAt)} · {time(r.createdAt)} · {r.status || "Legacy receipt"}
                                 </small>
+                                {localStorage.getItem(`matchday-tx-${r.id}`) && <a target="_blank" rel="noreferrer" href={`${config.chain.explorer}/tx/${localStorage.getItem(`matchday-tx-${r.id}`)}`}>View transaction ↗</a>}
                               </div>
                               <button
                                 className="icon-button"
@@ -1495,6 +1509,7 @@ function App() {
                                 <Download size={16} />
                               </button>
                               {config?.contract &&
+                                !r.status &&
                                 !user.practice &&
                                 JSON.parse(r.payload).mode === "live" &&
                                 r.deadline > now / 1000 && (
@@ -1942,8 +1957,8 @@ function App() {
               <p>
                 Wallet login verifies ownership. Picks and scoring are hosted by
                 Matchday. Downloadable receipts contain pick fingerprints;
-                optional BOT timestamps are available only when a contract is
-                configured. They prove timing, not result accuracy.
+                new live picks require a confirmed BOT receipt transaction.
+                BOT gas is required. Receipts prove timing, not result accuracy.
               </p>
             </section>
           </div>

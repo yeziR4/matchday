@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import request from 'supertest';
+import { Wallet } from 'ethers';
+import { openDatabase } from '../server/db.js';
+import { createApp } from '../server/app.js';
+
+test('live picks require a verified commitment; confirmation is recoverable and idempotent', async () => {
+  const db = openDatabase(':memory:');
+  const origin = 'http://localhost:3000';
+  let timestamp = 0;
+  const {app,feed} = createApp(db,{origin,mode:'live',contract:'0x5dc66B8F74E581a6b4f5Bbcf79aAFae995546C8a',readCommitment:async()=>timestamp});
+  feed.sync = async()=>{};
+  feed.status = ()=>({stale:false});
+  const match={id:'1',kickoff:new Date(Date.now()+3600000).toISOString(),status:'TIMED',home:{name:'Home'},away:{name:'Away'}};
+  db.prepare('INSERT INTO fixtures VALUES (?,?,?,?)').run('1','live',JSON.stringify(match),Date.now());
+  const client=request.agent(app);
+  const post=(path,body={})=>client.post(path).set('Origin',origin).send(body);
+  const w=Wallet.createRandom();
+  const c=await post('/api/auth/challenge',{address:w.address});
+  await post('/api/auth/verify',{id:c.body.id,signature:await w.signMessage(c.body.message)});
+  const d=await post('/api/predictions',{picks:[{fixtureId:'1',market:'result',selection:'HOME'}]});
+  assert.equal(d.status,200);
+  assert.equal(d.body.predictions.length,0);
+  assert.equal((await client.get('/api/leaderboard')).body.total,0);
+  const path=`/api/receipts/${d.body.receipt.id}/confirm`;
+  assert.equal((await post(path)).status,409);
+  assert.equal((await request(app).post(path).set('Origin',origin).send({})).status,401);
+  timestamp=d.body.receipt.deadline;
+  assert.equal((await post(path)).status,409);
+  timestamp=Math.floor(Date.now()/1000);
+  // Confirm after the fixture finishes: the chain timestamp, not retry time, decides validity.
+  match.status='FINISHED';match.score={home:2,away:0};
+  db.prepare('UPDATE fixtures SET payload=? WHERE id=?').run(JSON.stringify(match),'1');
+  const confirmed=await post(path);
+  assert.equal(confirmed.status,200);
+  assert.equal(confirmed.body.predictions[0].outcome,'won');
+  assert.equal((await post(path)).body.predictions.length,1);
+  assert.equal((await client.get('/api/receipts')).body.receipts[0].status,'confirmed');
+  db.close();
+});

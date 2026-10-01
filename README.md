@@ -1,5 +1,13 @@
 # Matchday
 
+## October 2026 submission update
+
+New live predictions now use **Submit picks on BOT**. The API first prepares a receipt without adding scored predictions. The wallet commits its hash, then the server independently reads the wallet/hash commitment on mainnet before accepting the picks. Native BOT gas is required; there is no stake or platform betting fee. Demo mode remains simulated.
+
+Pending submissions are available for retry after a reload, including after kickoff when the original transaction was confirmed in time. Repeating confirmation is idempotent. The browser shows transaction links for transactions sent on that device. Existing predictions are preserved as legacy history. The additive `submissions` table is created automatically; keep the existing Railway volume. No contract redeployment or new environment variable is required.
+
+The initial-release description below documents the earlier optional-anchoring flow; this section supersedes that behavior for new live picks.
+
 A football prediction competition for BOT Chain. Five leagues, ten score-based markets, unlimited predictions, and one point per correct pick. No monetary stakes or cash prizes.
 
 ## Run locally
